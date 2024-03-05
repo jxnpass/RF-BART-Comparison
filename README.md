@@ -35,6 +35,8 @@ The project utilized three different scripts, [kneesleeve.R](/ex1_kneesleeve/kne
 
 This data was downloaded from [Kaggle](https://www.kaggle.com/datasets/iammustafatz/diabetes-prediction-dataset), mainly for comparing how RF and BART do with a classification (categorical) prediction task. In this case, the goal is to utilize certain medical features in the data that predicts the likelihood of an individual having diabetes. 
 
+![ex2](/ex2-diabetes/graphics/1-ex2graph.png)
+
 Random Forests are typically labelled as powerful methods for classification, but I was curious to see how BART, which is considered pre-dominantly a model for regression, performed on the diabetes set. [diabetes.R](ex2-diabetes/diabetes.R) carries all the work for this project. BART tuning takes a very long time, and I only ever did once, so I recommend not doing it at all (which is why I commented it out). Since this dataset was heavily skewed in favor of non-diabetics, it is necessary that future investments on the diabetes project consider oversampling positives or undersampling negatives (which wasn't exactly my goal since I wanted to see how overfit happened with each model). 
 
 ## Credits 

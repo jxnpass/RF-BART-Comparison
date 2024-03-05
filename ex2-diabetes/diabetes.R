@@ -5,6 +5,7 @@ library(BART3)
 library(caret)
 library(pROC)
 
+cores <- 4
 
 ## Import data -------
 setwd('RF-BART-Comparison/ex2-diabetes')
@@ -28,37 +29,47 @@ y_test <- d_test$diabetes
 # numerical
 eda_sample <- sample(size = nrow(d_test)*.2, x = 1:nrow(d_test))
 diabetes_eda_num <- d_test[eda_sample,c(num_features, "diabetes")] %>% gather(num_features, key = "feature", value = "value")
-ggplot(data = diabetes_eda_num, aes(x = value, y = diabetes)) +
+num_plot <- ggplot(data = diabetes_eda_num, aes(x = value, y = diabetes)) +
   facet_wrap(~ feature, scales = "free_x") +
   geom_jitter(height = .2, width = .2) +
-  geom_smooth(mapping = aes(group = feature), se = F, method = "gam")
+  geom_smooth(mapping = aes(group = feature), se = F, method = "loess") + 
+  labs(title = "Logistic Trends on Continuous Features",
+       x = "Value",
+       y = "Diabetic")
 
 # categorical
 diabetes_eda_cat <- d_test[eda_sample,c(cat_features, "diabetes")]
 diabetes_counts <- diabetes_eda_cat %>% group_by(diabetes) %>% summarize(n = n()) %>% ungroup() 
-gender_counts <- diabetes_eda_cat %>% group_by(diabetes, gender) %>% summarize(count = n()) %>% 
-  mutate(prop = ifelse(diabetes == T, count/diabetes_counts$n[2], count/diabetes_counts$n[1])) %>% ungroup() %>% 
-  rename(feature = gender)
 hypertension_counts <- diabetes_eda_cat %>% mutate(hypertension = ifelse(hypertension == 1, "Hypertension", "No Hypertension")) %>% 
   group_by(diabetes, hypertension) %>% summarize(count = n()) %>% 
   mutate(prop = ifelse(diabetes == T, count/diabetes_counts$n[2], count/diabetes_counts$n[1])) %>% ungroup() %>% 
-  rename(feature = hypertension)
+  rename(feature = hypertension) %>% 
+  filter(feature == "Hypertension")
 heart_disease_counts <- diabetes_eda_cat %>% mutate(heart_disease = ifelse(heart_disease == 1, "Heart Disease", "No Heart Disease")) %>% 
   group_by(diabetes, heart_disease) %>% summarize(count = n()) %>% 
   mutate(prop = ifelse(diabetes == T, count/diabetes_counts$n[2], count/diabetes_counts$n[1])) %>% ungroup() %>% 
-  rename(feature = heart_disease)
-smoking_history_counts <- diabetes_eda_cat %>% group_by(diabetes, smoking_history) %>% summarize(count = n()) %>% 
-  mutate(prop = ifelse(diabetes == T, count/diabetes_counts$n[2], count/diabetes_counts$n[1])) %>% ungroup() %>% 
-  rename(feature = smoking_history)
+  rename(feature = heart_disease) %>% 
+  filter(feature == "Heart Disease")
+smoking_history_counts <- diabetes_eda_cat %>% 
+  mutate(smoking_history = ifelse(smoking_history %in% c("current", "former"), "Current/Former Smoker", "Non-Smoker")) %>% 
+  group_by(diabetes, smoking_history) %>% summarize(count = n()) %>%
+  mutate(prop = ifelse(diabetes == T, count/diabetes_counts$n[2], count/diabetes_counts$n[1])) %>% ungroup() %>%
+  rename(feature = smoking_history) %>%
+  filter(feature == "Current/Former Smoker")
 
-diabetes_eda_cat <- rbind(gender_counts, hypertension_counts, heart_disease_counts, smoking_history_counts)
+diabetes_eda_cat <- rbind(hypertension_counts, heart_disease_counts, smoking_history_counts)
 
-ggplot(data = diabetes_eda_cat, aes(x = feature, y = prop, fill = diabetes)) +
+cat_plot <- ggplot(data = diabetes_eda_cat, aes(x = feature, y = prop, fill = diabetes)) +
   geom_col(position = "dodge") +
-  facet_wrap(~ feature, scales = "free_x", labeller = "label_both")
+  labs(title = "Categorical Features on Diabetes",
+       x = "Feature",
+       y = "Marginal Proportion",
+       fill = "Diabetic")
 
-# FIXME
+ex2 <- ggpubr::ggarrange(num_plot, cat_plot, ncol = 2)
 
+ggsave(filename = "~/General_Resarch/RF-BART-Comparison/ex2-diabetes/graphics/1-ex2graph.png",
+       device = "png", plot = ex2, width = 6, height = 4, units = "in")
 
 # Tuning ------
 # tuning parameters
@@ -70,95 +81,95 @@ nodes <- c(1, 5, 10, 20)
 cv <- 5
 param_grid_rf <- expand.grid('ntree' = ntree_arg, 'mtry' = mtrys, 'node' = nodes)
 
-DiabetesGridCV <- function(X, y, param_grid, cv = 1, model = "RF", sampsize = .75) {
-  
-  n <- nrow(X)
-  valid_results <- param_grid %>% mutate(accuracy = NA, sensitivity = NA, 
-                                         specificity = NA, comp_time = NA) # for cross validation
-  
-  print(paste("Performing Cross-Validation model fits", cv, "times for each unique set of parameters..."))
-  for (i in 1:nrow(param_grid)) {
-    
-    if (model == "RF") {
-      # identify params on grid
-      ntree <- param_grid$ntree[i]
-      mtry <- param_grid$mtry[i]
-      node <- param_grid$node[i]
-      
-      print(paste("RandomForest Fit: Ntree = ", ntree, ", Mtry = ", mtry, ", Node = ", node, sep = ""))
-    }
-    
-    else if (model == "BART") {
-      # identify params on grid
-      ntree <- param_grid$ntree[i]
-      base <- param_grid$base[i]
-      power <- param_grid$power[i]
-      k <- param_grid$k[i]
+# DiabetesGridCV <- function(X, y, param_grid, cv = 1, model = "RF", sampsize = .75) {
+#   
+#   n <- nrow(X)
+#   valid_results <- param_grid %>% mutate(accuracy = NA, sensitivity = NA, 
+#                                          specificity = NA, comp_time = NA) # for cross validation
+#   
+#   print(paste("Performing Cross-Validation model fits", cv, "times for each unique set of parameters..."))
+#   for (i in 1:nrow(param_grid)) {
+#     
+#     if (model == "RF") {
+#       # identify params on grid
+#       ntree <- param_grid$ntree[i]
+#       mtry <- param_grid$mtry[i]
+#       node <- param_grid$node[i]
+#       
+#       print(paste("RandomForest Fit: Ntree = ", ntree, ", Mtry = ", mtry, ", Node = ", node, sep = ""))
+#     }
+#     
+#     else if (model == "BART") {
+#       # identify params on grid
+#       ntree <- param_grid$ntree[i]
+#       base <- param_grid$base[i]
+#       power <- param_grid$power[i]
+#       k <- param_grid$k[i]
+# 
+#       print(paste("BART Fit: Ntree = ", ntree, ", base = ", base, ", power = ", 
+#                   power, ", k = ", k, sep = ""))
+#       
+#     }
+#     # starting with cross validation
+#     results_cv <- data.frame(cv = 1:cv, accuracy = NA, sensitivity = NA, 
+#                              specificity = NA, comp_time = NA)
+#     
+#     for (n_cv in 1:cv) {
+#       
+#       samp <- createDataPartition(y, p = sampsize, list = FALSE, times = 1)
+#       
+#       X_train = X[samp,] 
+#       y_train = y[samp] 
+#       X_valid = X[-samp,] 
+#       y_valid = y[-samp] 
+#       
+#       # randomForest fit
+#       start_time <- Sys.time()
+#       if (model == "RF") {
+#         my_model <- randomForest(X_train, y_train, ntree = ntree, mtry = mtry, nodesize = node)
+#       }
+#       else if (model == "BART") {
+#         my_model <- mc.pbart(X_train, y_train, ntree = ntree, base = base, power = power, k = k, 
+#                             mc.cores = 4, printevery = 0)
+#       }
+#       end_time <- Sys.time()
+#       results_cv[n_cv, c('comp_time')] <- end_time - start_time
+#       
+#       # check preds on validation set
+#       if (model == "RF") {
+#         y_pred_cv <- predict(my_model, X_valid) 
+#         results = data.frame(y_pred_cv, y_valid)
+#       }
+#       else if (model == "BART") {
+#         y_pred_cv <- as.numeric(predict(my_model, X_valid, mc.cores = 4)$prob.test.mean > .5)
+#         results = data.frame(y_pred_cv, y_valid) %>% 
+#           mutate(y_pred_cv = as.factor(y_pred_cv),
+#                  y_valid = as.factor(y_valid))
+#       }
+#       
+#       
+#       # save metrics
+#       confmat <- (results %>% conf_mat(., truth = y_valid, estimate = y_pred_cv))$table
+#       results_cv[n_cv, c('accuracy')] <- (confmat[1,1] + confmat[2,2]) / (confmat[1,1] + confmat[1,2] + confmat[2,1] + confmat[2,2])
+#       results_cv[n_cv, c('sensitivity')] <- confmat[2,2]/(confmat[2,2] + confmat[1,2])
+#       results_cv[n_cv, c('specificity')] <- confmat[1,1]/(confmat[1,1] + confmat[2,1])
+#       
+#       }
+#     
+#     valid_results[i, c('accuracy', 'sensitivity', 'specificity', 'comp_time')] <- results_cv %>% 
+#       summarise(accuracy = mean(accuracy), sensitivity = mean(sensitivity),
+#                 specificity = mean(specificity), comp_time = mean(comp_time))
+#   }
+#   
+#   # Finish CV  
+#   print("Cross-Validation Complete")
+#   
+#   return(valid_results)
+# }
 
-      print(paste("BART Fit: Ntree = ", ntree, ", base = ", base, ", power = ", 
-                  power, ", k = ", k, sep = ""))
-      
-    }
-    # starting with cross validation
-    results_cv <- data.frame(cv = 1:cv, accuracy = NA, sensitivity = NA, 
-                             specificity = NA, comp_time = NA)
-    
-    for (n_cv in 1:cv) {
-      
-      samp <- createDataPartition(y, p = sampsize, list = FALSE, times = 1)
-      
-      X_train = X[samp,] 
-      y_train = y[samp] 
-      X_valid = X[-samp,] 
-      y_valid = y[-samp] 
-      
-      # randomForest fit
-      start_time <- Sys.time()
-      if (model == "RF") {
-        my_model <- randomForest(X_train, y_train, ntree = ntree, mtry = mtry, nodesize = node)
-      }
-      else if (model == "BART") {
-        my_model <- mc.pbart(X_train, y_train, ntree = ntree, base = base, power = power, k = k, 
-                            mc.cores = 4, printevery = 0)
-      }
-      end_time <- Sys.time()
-      results_cv[n_cv, c('comp_time')] <- end_time - start_time
-      
-      # check preds on validation set
-      if (model == "RF") {
-        y_pred_cv <- predict(my_model, X_valid) 
-        results = data.frame(y_pred_cv, y_valid)
-      }
-      else if (model == "BART") {
-        y_pred_cv <- as.numeric(predict(my_model, X_valid, mc.cores = 4)$prob.test.mean > .5)
-        results = data.frame(y_pred_cv, y_valid) %>% 
-          mutate(y_pred_cv = as.factor(y_pred_cv),
-                 y_valid = as.factor(y_valid))
-      }
-      
-      
-      # save metrics
-      confmat <- (results %>% conf_mat(., truth = y_valid, estimate = y_pred_cv))$table
-      results_cv[n_cv, c('accuracy')] <- (confmat[1,1] + confmat[2,2]) / (confmat[1,1] + confmat[1,2] + confmat[2,1] + confmat[2,2])
-      results_cv[n_cv, c('sensitivity')] <- confmat[2,2]/(confmat[2,2] + confmat[1,2])
-      results_cv[n_cv, c('specificity')] <- confmat[1,1]/(confmat[1,1] + confmat[2,1])
-      
-      }
-    
-    valid_results[i, c('accuracy', 'sensitivity', 'specificity', 'comp_time')] <- results_cv %>% 
-      summarise(accuracy = mean(accuracy), sensitivity = mean(sensitivity),
-                specificity = mean(specificity), comp_time = mean(comp_time))
-  }
-  
-  # Finish CV  
-  print("Cross-Validation Complete")
-  
-  return(valid_results)
-}
-
-cv_results_rf <- DiabetesGridCV(X_train, y_train, param_grid = param_grid_rf, cv = 1)
-cv_results_rf[which.max(cv_results_rf$accuracy),]
-write.csv(file = "~/General_Resarch/SRC2024/ex2-diabetes/rf_cv_diabetes.csv", x = cv_results_rf)
+# cv_results_rf <- DiabetesGridCV(X_train, y_train, param_grid = param_grid_rf, cv = 1)
+# cv_results_rf[which.max(cv_results_rf$accuracy),]
+# write.csv(file = "~/General_Resarch/SRC2024/ex2-diabetes/rf_cv_diabetes.csv", x = cv_results_rf)
 # ntree = 250, mtry = 2, node = 5
 
 ### Best RF
@@ -218,7 +229,7 @@ y_test_bart <- as.numeric(y_test)-1
 # all performances were almost exactly the same, so I'll use the least computationally intensive
 # cv_results_bart[which.min(cv_results_bart$comp_time),]
 
-bart <- mc.pbart(X_train_bart, y_train_bart, ntree = 100, base = .75, power = .5, k = 3, mc.cores = 4)
+bart <- mc.pbart(X_train_bart, y_train_bart, ntree = 100, base = .75, power = .5, k = 3, mc.cores = cores)
 bart_preds_tb <- predict(bart, X_test_bart)
 bart_votes <- bart_preds_tb$prob.test.mean
 
