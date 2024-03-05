@@ -33,7 +33,7 @@ num_plot <- ggplot(data = diabetes_eda_num, aes(x = value, y = diabetes)) +
   facet_wrap(~ feature, scales = "free_x") +
   geom_jitter(height = .2, width = .2) +
   geom_smooth(mapping = aes(group = feature), se = F, method = "loess") + 
-  labs(title = "Logistic Trends on Continuous Features",
+  labs(title = "Continuous Features on Diabetes",
        x = "Value",
        y = "Diabetic")
 
@@ -69,7 +69,7 @@ cat_plot <- ggplot(data = diabetes_eda_cat, aes(x = feature, y = prop, fill = di
 ex2 <- ggpubr::ggarrange(num_plot, cat_plot, ncol = 2)
 
 ggsave(filename = "~/General_Resarch/RF-BART-Comparison/ex2-diabetes/graphics/1-ex2graph.png",
-       device = "png", plot = ex2, width = 6, height = 4, units = "in")
+       device = "png", plot = ex2, width = 11, height = 7, units = "in")
 
 # Tuning ------
 # tuning parameters
@@ -215,6 +215,11 @@ param_grid_bart <- expand.grid('ntree' = ntree_arg,
                                'power' = power,
                                'k' = k)
 
+d_train <- d_train %>% 
+  mutate(diabetes = as.numeric(diabetes)-1) 
+d_test <- d_test %>% 
+  mutate(diabetes = as.numeric(diabetes)-1)
+
 bart_lm <- lm(diabetes ~ -1+., data = d_train)
 X_train_bart <- model.matrix(bart_lm)
 bart_lm <- lm(diabetes ~ -1+., data = d_test)
@@ -242,7 +247,7 @@ preds_bart_df %>%
   mutate(truth = as.factor(truth), estimate = as.factor(estimate)) %>% 
   metrics(., truth = truth, estimate = estimate)
 
-bart_confmat <- best_preds_df %>%   
+bart_confmat <- preds_bart_df %>%   
   mutate(truth = as.factor(truth), estimate = as.factor(estimate)) %>% 
   conf_mat(truth = truth, estimate = estimate)
 bart_confmat <- bart_confmat$table
@@ -271,14 +276,13 @@ ggplot() +
 
 
 # ROC
-
 bart_roc_curve = roc(preds_bart_df$truth, preds_bart_df$estimate_prob)
 bart_auc_value <- round(auc(bart_roc_curve), 3)
 bart_roc_spec = bart_roc_curve$specificities
 bart_roc_sens = bart_roc_curve$sensitivities
 
 # Comparing ROC Curves ------
-ggplot() +
+roc_curve_plot <- ggplot() +
   geom_line(aes(x = 1-rf_roc_spec, y = rf_roc_sens, color = "RF: 0.961")) +
   geom_line(aes(x = 1-bart_roc_spec, y = bart_roc_sens, color = "BART: 0.978")) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
@@ -286,6 +290,7 @@ ggplot() +
   scale_color_manual(values = c("RF: 0.961" = "red3", "BART: 0.978" = "pink1")) +
   theme_classic() +
   theme(legend.position = "bottom")
-  
 
+ggsave(filename = "~/General_Resarch/RF-BART-Comparison/ex2-diabetes/graphics/2-roccurves.png",
+       device = "png", plot = roc_curve_plot, width = 11, height = 7, units = "in")
 
